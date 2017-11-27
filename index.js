@@ -49,7 +49,7 @@ module.exports = function(homebridge) {
         this.setProps({
             format: Characteristic.Formats.UINT16,
             unit: 'K',
-            maxValue: 9000,
+            maxValue: 4000,
             minValue: 2500,
             minStep: 250,
             perms: [Characteristic.Perms.READ, Characteristic.Perms.WRITE, Characteristic.Perms.NOTIFY]
@@ -209,11 +209,6 @@ LifxLanPlatform.prototype.addAccessory = function(bulb, data) {
                 service.addCharacteristic(Characteristic.Brightness);
                 service.addCharacteristic(ColorTemperature);
 
-                if (accessory.context.features.color === true) {
-                    service.addCharacteristic(Characteristic.Hue);
-                    service.addCharacteristic(Characteristic.Saturation);
-                }
-
                 this.accessories[accessory.UUID] = new LifxAccessory(this.log, accessory, bulb, data);
 
                 this.api.registerPlatformAccessories("homebridge-lifx-lan", "LifxLan", [accessory]);
@@ -278,12 +273,7 @@ LifxLanPlatform.prototype.configurationRequestHandler = function(context, reques
                 services = [Service.LightSensor];
             }
 
-            if (context.accessory.context.features.color === true) {
-                characteristics = [Characteristic.Brightness, ColorTemperature, Characteristic.Hue, Characteristic.Saturation];
-            }
-            else {
-                characteristics = [Characteristic.Brightness, ColorTemperature];
-            }
+	    characteristics = [Characteristic.Brightness, ColorTemperature];
 
             for (var index in characteristics) {
                 var characteristic = characteristics[index];
@@ -675,18 +665,6 @@ LifxAccessory.prototype.addEventHandler = function(service, characteristic) {
                 .getCharacteristic(Characteristic.CurrentAmbientLightLevel)
                 .on('get', this.getAmbientLight.bind(this));
             break;
-        case Characteristic.Hue:
-            service
-                .getCharacteristic(Characteristic.Hue)
-                .setValue(this.color.hue)
-                .on('set', this.setHue.bind(this));
-            break;
-        case Characteristic.Saturation:
-            service
-                .getCharacteristic(Characteristic.Saturation)
-                .setValue(this.color.saturation)
-                .on('set', this.setSaturation.bind(this));
-            break;
     }
 }
 
@@ -695,9 +673,6 @@ LifxAccessory.prototype.addEventHandlers = function() {
     this.addEventHandler(Service.Lightbulb,Characteristic.Brightness);
     this.addEventHandler(Service.LightSensor, Characteristic.CurrentAmbientLightLevel);
     this.addEventHandler(Service.Lightbulb, ColorTemperature);
-
-    this.addEventHandler(Service.Lightbulb, Characteristic.Hue);
-    this.addEventHandler(Service.Lightbulb, Characteristic.Saturation);
 }
 
 LifxAccessory.prototype.closeCallbacks = function(err, value) {
@@ -713,11 +688,6 @@ LifxAccessory.prototype.get = function (type) {
 
     switch(type) {
         case "brightness":
-        case "hue":
-        case "saturation":
-            this.log("%s - Get %s: %d", this.accessory.context.name, type, this.color[type]);
-            state = this.color[type];
-            break;
         case "kelvin":
             this.log("%s - Get %s: %d", this.accessory.context.name, type, this.color[type]);
             state = this.miredConversion(this.color[type]);
@@ -773,13 +743,6 @@ LifxAccessory.prototype.getState = function(type, callback) {
                 service.getCharacteristic(ColorTemperature).updateValue(this.miredConversion(this.color.kelvin));
             }
 
-            if (service.testCharacteristic(Characteristic.Hue)) {
-                service.getCharacteristic(Characteristic.Hue).updateValue(this.color.hue);
-            }
-
-            if (service.testCharacteristic(Characteristic.Saturation)) {
-                service.getCharacteristic(Characteristic.Saturation).updateValue(this.color.saturation);
-            }
         }
 
         this.closeCallbacks(null, this.get(type));
@@ -805,14 +768,6 @@ LifxAccessory.prototype.setColor = function(type, value, callback){
 
         var service = this.accessory.getService(Service.Lightbulb);
 
-        if (service.testCharacteristic(Characteristic.Hue) === true) {
-            service.getCharacteristic(Characteristic.Hue).updateValue(0);
-        }
-
-        if (service.testCharacteristic(Characteristic.Saturation) === true) {
-            service.getCharacteristic(Characteristic.Saturation).updateValue(0);
-        }
-
         this.color.hue = 0;
         this.color.saturation = 0;
     }
@@ -831,15 +786,6 @@ LifxAccessory.prototype.miredConversion = function(value) {
     return parseInt(1000000/value);
 }
 
-LifxAccessory.prototype.setHue = function(value, callback) {
-    if (value == this.accessory.getService(Service.Lightbulb).getCharacteristic(Characteristic.Hue).value) {
-        callback(null);
-        return;
-    }
-
-    this.setColor("hue", value, callback);
-}
-
 LifxAccessory.prototype.setKelvin = function(value, callback) {
     if (value == this.accessory.getService(Service.Lightbulb).getCharacteristic(ColorTemperature).value) {
         callback(null);
@@ -847,15 +793,6 @@ LifxAccessory.prototype.setKelvin = function(value, callback) {
     }
 
     this.setColor("kelvin", value, callback);
-}
-
-LifxAccessory.prototype.setSaturation = function(value, callback) {
-    if (value == this.accessory.getService(Service.Lightbulb).getCharacteristic(Characteristic.Saturation).value) {
-        callback(null);
-        return;
-    }
-
-    this.setColor("saturation", value, callback);
 }
 
 LifxAccessory.prototype.setPower = function(state, callback) {
@@ -874,7 +811,7 @@ LifxAccessory.prototype.setWaveform = function(settings, callback) {
     var light = this.accessory.getService(Service.Lightbulb);
 
     var defaults = {
-        color: {hue: 128, saturation: 100, brightness: 100, kelvin: 3500},
+        color: {hue: 0, saturation: 0, brightness: 1, kelvin: 2500},
         cycles: 3,
         isTransient: true,
         period: 1000,
@@ -938,12 +875,10 @@ LifxAccessory.prototype.updateInfo = function() {
     if (model !== "Unknown" && model !== "Default-Model" && this.accessory.context.features !== undefined) {
         var service = this.accessory.getService(Service.Lightbulb);
 
-        if (this.accessory.context.features.color === false && service.testCharacteristic(ColorTemperature) === true) {
-            service.getCharacteristic(ColorTemperature).setProps({
-                maxValue: 370,
-                minValue: 154
-            });
-        }
+        service.getCharacteristic(ColorTemperature).setProps({
+            maxValue: 370,
+            minValue: 154
+        });
         return;
     }
 
@@ -963,18 +898,7 @@ LifxAccessory.prototype.updateInfo = function() {
 
         var service = this.accessory.getService(Service.Lightbulb);
 
-        if (this.accessory.context.features.color === true) {
-            if (service.testCharacteristic(Characteristic.Hue) === false) {
-                service.addCharacteristic(Characteristic.Hue);
-                this.addEventHandler(service, Characteristic.Hue);
-            }
-
-            if (service.testCharacteristic(Characteristic.Saturation) === false) {
-                service.addCharacteristic(Characteristic.Saturation);
-                this.addEventHandler(service, Characteristic.Saturation);
-            }
-        }
-        else if (service.testCharacteristic(ColorTemperature) === true) {
+        if (service.testCharacteristic(ColorTemperature) === true) {
             service.getCharacteristic(ColorTemperature).setProps({
                 maxValue: 370,
                 minValue: 154
